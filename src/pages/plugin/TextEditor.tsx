@@ -3,11 +3,11 @@ import { bindActionCreators, Dispatch } from 'redux';
 import { connect } from 'dva';
 import { changeData } from 'pageActions/clipper';
 import { asyncRunExtension } from 'pageActions/userPreference';
-import { SerializedExtensionWithId } from '@web-clipper/extensions';
 import * as HyperMD from 'hypermd';
 import { EditorContainer } from 'components/container';
 import { isUndefined } from 'common/object';
 import { GlobalStore } from 'common/types';
+import { IExtensionWithId } from '@/extensions/common';
 
 const useActions = {
   asyncRunExtension: asyncRunExtension.started,
@@ -25,7 +25,7 @@ const mapStateToProps = ({
 };
 type PageOwnProps = {
   pathname: string;
-  extension: SerializedExtensionWithId;
+  extension: IExtensionWithId;
 };
 type PageProps = ReturnType<typeof mapStateToProps> & typeof useActions & PageOwnProps;
 
@@ -52,7 +52,12 @@ class ClipperPluginPage extends React.Component<PageProps> {
       const value = this.myCodeMirror.getValue();
       if (data !== value) {
         try {
-          this.myCodeMirror.setValue(data);
+          const that = this;
+          setTimeout(() => {
+            that.myCodeMirror.setValue(data);
+            that.myCodeMirror.focus();
+            that.myCodeMirror.setCursor(that.myCodeMirror.lineCount(), 0);
+          }, 10);
         } catch (_error) {}
       }
     }

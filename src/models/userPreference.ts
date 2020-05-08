@@ -1,3 +1,4 @@
+import { ITrackService } from '@/service/common/track';
 import { IContentScriptService } from '@/service/common/contentScript';
 import { ITabService } from '@/service/common/tab';
 import { Container } from 'typedi';
@@ -29,12 +30,11 @@ import backend from 'common/backend/index';
 import { loadImage } from 'common/blob';
 import { routerRedux } from 'dva';
 import { localStorageService, syncStorageService } from '@/common/chrome/storage';
-import { loadExtensions } from '@/actions/extension';
 import { initAccounts } from '@/actions/account';
 import copyToClipboard from 'copy-to-clipboard';
 import { ocr } from '@/common/server';
 import remark from 'remark';
-import remakPangu from 'remark-pangu';
+import remakPangu from '@web-clipper/remark-pangu';
 
 const { message } = antd;
 
@@ -157,10 +157,13 @@ builder
   .takeEvery(asyncRunExtension.started, function*({ extension, pathname }, { call, put, select }) {
     const contentScriptService = Container.get(IContentScriptService);
     let result;
-    const { run, afterRun, destroy } = extension;
+    const {
+      extensionLifeCycle: { run, afterRun, destroy },
+      id,
+    } = extension;
     const tabService = Container.get(ITabService);
     if (run) {
-      result = yield call(contentScriptService.runScript, run);
+      result = yield call(contentScriptService.runScript, id, 'run');
     }
     const state: GlobalStore = yield select(state => state);
     const data = state.clipper.clipperData[pathname];
@@ -178,47 +181,39 @@ builder
       aTag.click();
       URL.revokeObjectURL(aTag.href);
     }
-
     async function pangu(document: string): Promise<string> {
       const result = await remark()
         .use(remakPangu)
         .process(document);
       return result.contents as string;
     }
-
     if (afterRun) {
       try {
-        result = yield (async () => {
-          // @ts-ignore
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const context: ToolContext<any, any> = {
-            locale: state.userPreference.locale,
-            result,
-            data,
-            message,
-            imageService: backend.getImageHostingService(),
-            loadImage: loadImage,
-            captureVisibleTab: tabService.captureVisibleTab,
-            copyToClipboard,
-            createAndDownloadFile,
-            antd,
-            React,
-            pangu,
-            ocr: async r => {
-              const response = await ocr(r);
-              return response.result;
-            },
-          };
-
-          // eslint-disable-next-line
-          return await eval(afterRun);
-        })();
+        const context: ToolContext<any, any> = {
+          locale: state.userPreference.locale,
+          result,
+          data,
+          message,
+          imageService: backend.getImageHostingService(),
+          loadImage: loadImage,
+          captureVisibleTab: tabService.captureVisibleTab,
+          copyToClipboard,
+          createAndDownloadFile,
+          antd,
+          React,
+          pangu,
+          ocr: async r => {
+            const response = await ocr(r);
+            return response.result;
+          },
+        };
+        result = yield call(afterRun, context);
       } catch (error) {
         message.error(error.message);
       }
     }
     if (destroy) {
-      contentScriptService.runScript(destroy);
+      contentScriptService.runScript(id, 'destroy');
     }
     yield put(
       changeData({
@@ -263,7 +258,6 @@ builder
             setLocale(localStorageService.get(LOCAL_USER_PREFERENCE_LOCALE_KEY, navigator.language))
           )
         );
-        dispatch(loadExtensions.started());
       }
     });
   })
@@ -318,5 +312,11 @@ builder
       servicesMeta,
     };
   });
+
+builder.subscript(function trackLoadPage({ history }) {
+  history.listen(e => {
+    Container.get(ITrackService).trackEvent('Open_Page', e.pathname);
+  });
+});
 
 export default builder.build();

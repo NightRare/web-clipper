@@ -9,7 +9,7 @@ import { isEqual } from 'lodash';
 import { ToolContainer } from 'components/container';
 import { selectRepository, asyncChangeAccount } from 'pageActions/clipper';
 import { asyncRunExtension } from 'pageActions/userPreference';
-import { SerializedExtensionWithId, InitContext } from '@web-clipper/extensions';
+import { InitContext } from '@web-clipper/extensions';
 import Section from 'components/section';
 import { DvaRouterProps } from 'common/types';
 import useFilterExtensions from '@/common/hooks/useFilterExtensions';
@@ -19,33 +19,26 @@ import Header from './Header';
 import RepositorySelect from '@/components/RepositorySelect';
 import Container from 'typedi';
 import { IConfigService } from '@/service/common/config';
-import { Observer } from 'mobx-react';
+import { Observer, useObserver } from 'mobx-react';
 import IconAvatar from '@/components/avatar';
 import IconFont from '@/components/IconFont';
 import UserItem from '@/components/userItem';
 import { IContentScriptService } from '@/service/common/contentScript';
+import { IExtensionService, IExtensionContainer } from '@/service/common/extension';
+import { IExtensionWithId } from '@/extensions/common';
+import usePowerpack from '@/common/hooks/usePowerpack';
 
 const mapStateToProps = ({
   clipper: { currentAccountId, url, currentRepository, repositories, currentImageHostingService },
   loading,
   account: { accounts },
   userPreference: { locale, servicesMeta },
-  extension: { extensions, disabledExtensions },
 }: GlobalStore) => {
   const currentAccount = accounts.find(o => o.id === currentAccountId);
   const loadingAccount = loading.effects[asyncChangeAccount.started.type];
   return {
     loadingAccount,
     accounts,
-    extensions: extensions
-      .filter(o => !disabledExtensions.includes(o.id))
-      .filter(o => {
-        const matches = o.manifest.matches;
-        if (Array.isArray(matches)) {
-          return matches.some(o => matchUrl(o, url!));
-        }
-        return true;
-      }),
     currentImageHostingService,
     url,
     currentAccountId,
@@ -61,12 +54,12 @@ type PageProps = PageStateProps & DvaRouterProps;
 
 const Page = React.memo<PageProps>(
   props => {
+    const extensionService = Container.get(IExtensionService);
     const {
       repositories,
       currentAccount,
       currentRepository,
       loadingAccount,
-      extensions,
       url,
       currentImageHostingService,
       history: {
@@ -76,6 +69,27 @@ const Page = React.memo<PageProps>(
       accounts,
       servicesMeta,
     } = props;
+
+    const { valid } = usePowerpack();
+
+    const extensions = useObserver(() => {
+      return Container.get(IExtensionContainer)
+        .extensions.filter(o => !extensionService.DisabledExtensionIds.includes(o.id))
+        .filter(o => {
+          if (!valid) {
+            return !o.manifest.powerpack;
+          }
+          return true;
+        })
+        .filter(o => {
+          const matches = o.manifest.matches;
+          if (Array.isArray(matches)) {
+            // eslint-disable-next-line max-nested-callbacks
+            return matches.some(o => matchUrl(o, url!));
+          }
+          return true;
+        });
+    });
 
     const configService = Container.get(IConfigService);
 
@@ -110,10 +124,8 @@ const Page = React.memo<PageProps>(
       repositoryId = currentRepository.id;
     }
 
-    const enableExtensions: SerializedExtensionWithId[] = extensions.filter(o => {
-      if (o.init) {
-        // @ts-ignore
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const enableExtensions: IExtensionWithId[] = extensions.filter(o => {
+      if (o.extensionLifeCycle.init) {
         const context: InitContext = {
           locale: props.locale,
           accountInfo: {
@@ -123,8 +135,7 @@ const Page = React.memo<PageProps>(
           pathname,
           currentImageHostingService,
         };
-        // eslint-disable-next-line no-eval
-        return eval(o.init);
+        return o.extensionLifeCycle.init(context);
       }
       return true;
     });
@@ -240,7 +251,6 @@ const Page = React.memo<PageProps>(
       history,
       loadingAccount,
       locale,
-      extensions,
       servicesMeta,
       accounts,
     }: PageProps) => {
@@ -251,7 +261,6 @@ const Page = React.memo<PageProps>(
         currentAccount,
         pathname: history.location.pathname,
         locale,
-        extensions,
         servicesMeta,
         accounts,
       };

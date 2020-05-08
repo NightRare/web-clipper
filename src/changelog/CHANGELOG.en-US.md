@@ -1,3 +1,39 @@
+## 1.24.0
+
+`2020-04-28`
+
+- ✨ Support wiznote
+
+## 1.23.0
+
+`2020-04-07`
+
+- 🐛 Fixed an issue where some plugins disappeared
+- 💬 Add notice for notion.
+
+## 1.22.0
+
+`2020-03-28`
+
+- 🐛 Fix OneNote oauth,support business account
+
+## 1.21.0
+
+`2020-03-28`
+
+- ✨ Support zhihu gif
+- ♻️ Move icon to local
+- ♻️ Remove extensions store
+- 🐛 Fix sm.ms
+
+## 1.20.0
+
+`2020-02-25`
+
+- ✨ Support dida365
+- ✨ Support TickTick
+- ✨ Support Webdev (Dropbox)
+
 ## 1.19.0
 
 `2020-01-29`

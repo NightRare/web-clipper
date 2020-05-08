@@ -7,7 +7,7 @@ import { asyncRunExtension } from './../actions/userPreference';
 import { CompleteStatus } from 'common/backend/interface';
 import { ExtensionType } from '@web-clipper/extensions';
 import { CreateDocumentRequest, UnauthorizedError } from '@/common/backend/services/interface';
-import { GlobalStore, ImageClipperData, ClipperStore } from '@/common/types';
+import { GlobalStore, ClipperStore } from '@/common/types';
 import { DvaModelBuilder, removeActionNamespace } from 'dva-model-creator';
 import update from 'immutability-helper';
 import {
@@ -20,10 +20,11 @@ import {
 } from 'pageActions/clipper';
 import backend, { documentServiceFactory, imageHostingServiceFactory } from 'common/backend';
 import { unpackAccountPreference } from '@/common/account';
-import { message, notification, Button } from 'antd';
+import { notification, Button } from 'antd';
 import { routerRedux } from 'dva';
 import { asyncUpdateAccount } from '@/actions/account';
 import { channel } from 'redux-saga';
+import { IExtensionService, IExtensionContainer } from '@/service/common/extension';
 
 const defaultState: ClipperStore = {
   clipperHeaderForm: {
@@ -74,7 +75,7 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
     if (selectState.servicesMeta[type]?.permission) {
       const hasPermissions = yield call(
         permissionsService.contains,
-        selectState.servicesMeta[type]?.permission
+        selectState.servicesMeta[type]?.permission!
       );
       if (!hasPermissions) {
         const key = `open${Date.now()}`;
@@ -172,7 +173,6 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
     const selector = ({
       clipper: { currentRepository, clipperHeaderForm, repositories, currentAccountId },
       account: { accounts },
-      extension: { extensions, disabledAutomaticExtensions },
     }: GlobalStore) => {
       const currentAccount = accounts.find(({ id }) => id === currentAccountId);
       let repositoryId;
@@ -185,7 +185,10 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
       if (currentRepository) {
         repositoryId = currentRepository.id;
       }
+      const extensions = Container.get(IExtensionContainer).extensions;
       const extension = extensions.find(o => o.router === pathname);
+      const disabledAutomaticExtensions = Container.get(IExtensionService)
+        .DisabledAutomaticExtensionIds;
       const automaticExtensions = extensions.filter(
         o =>
           o.type === ExtensionType.Tool &&
@@ -232,27 +235,6 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
         content: data as string,
         ...clipperHeaderForm,
       };
-    }
-    if (extension.type === ExtensionType.Image) {
-      const imageHostingService = backend.getImageHostingService();
-      if (!imageHostingService) {
-        message.error('No image Hosting');
-        return;
-      }
-      try {
-        const responseUrl: string = yield call(imageHostingService.uploadImage, {
-          data: (data as ImageClipperData).dataUrl,
-        });
-        createDocumentRequest = {
-          repositoryId,
-          content: `![](${responseUrl})`,
-          ...clipperHeaderForm,
-        };
-      } catch (_error) {
-        message.error(_error.message);
-        yield put(asyncCreateDocument.failed({ params: { pathname }, error: null }));
-        return;
-      }
     }
     if (!createDocumentRequest) {
       return;
@@ -322,14 +304,14 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
     ...state,
     clipperHeaderForm,
   }))
-  .case(changeData, (state, { data, pathName }) =>
-    update(state, {
+  .case(changeData, (state, { data, pathName }) => {
+    return update(state, {
       clipperData: {
         [pathName]: {
           $set: data,
         },
       },
-    })
-  );
+    });
+  });
 
 export default model.build();
